@@ -1,6 +1,89 @@
 import math
 import sys 
 
+class monte_ore(object):
+
+	def __init__(self,classe):
+		self.classe = classe
+		self.let = 10
+		self.mat = 4 
+		self.sci = 2
+		self.ing = 3
+		self.spa = 2
+		self.mus = 2
+		self.tec = 2
+		self.art = 2
+		self.edf = 2
+		self.rel = 1
+		if (classe % 2 == 1):
+			self.inf = 4
+			self.pit = 2
+			self.fil = 2
+			self.edc = 2
+		else:
+			self.inf = 0
+			self.pit = 0
+			self.fil = 0
+			self.edc = 0
+
+	def print_class(self):
+		print("let: ", self.let)
+		print("mat: ", self.mat)
+		print("sci: ", self.sci)
+		print("ing: ", self.ing)
+		print("spa: ", self.spa)
+		print("mus: ", self.mus)
+		print("tec: ", self.tec)
+		print("art: ", self.art)
+		print("edf: ", self.edf)
+		print("rel: ", self.rel)
+		print("inf: ", self.inf) 
+		print("pit: ", self.pit) 
+		print("fil: ", self.fil) 
+		print("edc: ", self.edc)
+
+	def count(self,mat):
+		if (self.classe % 2 == 0):
+			if (mat == "inf" or mat == "pit" or mat == "fil" or mat == "edc"):
+				print("Error with class", self.classe, " and lesson of ", mat)
+		if (mat == "let"):
+			self.let -= 1
+		if (mat == "mat"):
+			self.mat -= 1
+		if (mat == "sci"):
+			self.sci -= 1
+		if (mat == "ing"):
+			self.ing -= 1
+		if (mat == "spa"):
+			self.spa -= 1
+		if (mat == "mus"):
+			self.mus -= 1
+		if (mat == "tec"):
+			self.tec -= 1
+		if (mat == "art"):
+			self.art -= 1
+		if (mat == "edf"):
+			self.edf -= 1
+		if (mat == "rel"):
+			self.rel -= 1
+		if (mat == "inf"):
+			self.inf -= 1
+		if (mat == "pit"):
+			self.pit -= 1
+		if (mat == "fil"):
+			self.fil -= 1
+		if (mat == "edc"):
+			self.edc -= 1
+
+	def check_monte_ore(self):
+		counter = self.let + self.mat + self.sci + self.ing + self.spa + self.mus + self.tec + self.art + self.edf + self.rel + self.inf + self.pit + self.fil + self.edc
+		if (counter != 0):
+			print("Error with monte ore of calss: ", self.classe)
+			self.print_class()
+			return False
+		else:
+			return True
+
 class giorno():
 	aule = []
 	docenti = []
@@ -62,6 +145,14 @@ def check_model(solution):
 	mer = giorno("mer") 
 	gio = giorno("gio") 
 	ven = giorno("ven") 
+
+	class1 = monte_ore(1)
+	class2 = monte_ore(2)
+	class3 = monte_ore(3)
+	class4 = monte_ore(4)
+	class5 = monte_ore(5)
+	class6 = monte_ore(6)
+	
 	tokens = solution.split()
 	ruolo = set()
 	count_lessons = 0
@@ -79,6 +170,20 @@ def check_model(solution):
 		else:
 			token = token[token.index("(")+1:token.index(")")]
 			token = token.split(",")
+
+			if (token[3] == "1"):
+				class1.count(token[2])
+			if (token[3] == "2"):
+				class2.count(token[2])
+			if (token[3] == "3"):
+				class3.count(token[2])
+			if (token[3] == "4"):
+				class4.count(token[2])
+			if (token[3] == "5"):
+				class5.count(token[2])
+			if (token[3] == "6"):
+				class6.count(token[2])
+				
 			check_ruolo = (token[1],token[2],token[3])
 			if not (check_ruolo in ruolo):
 				print("Error check_ruolo for teacher: ", token[1], ", course: ", token[2], " and class ", token[3])
@@ -122,10 +227,25 @@ def check_model(solution):
 				return False
 			count_lessons += 1
 
+	if not class1.check_monte_ore():
+		return False
+	if not class2.check_monte_ore():
+		return False
+	if not class3.check_monte_ore():
+		return False
+	if not class4.check_monte_ore():
+		return False
+	if not class5.check_monte_ore():
+		return False
+	if not class6.check_monte_ore():
+		return False
+	
 	if not (len(ruolo) == 72):
 		print("Cardinality of set 'ruolo' is ", len(ruolo) ," and not 72")
+		return False
 	if not (count_lessons == 210):
 		print("The nember of lessons is ", count_lessons ," and not 210")
+		return False
 	return True
 
 
@@ -142,6 +262,4 @@ if __name__ == '__main__':
 				    no_error = check_model(line)
 				    print("checked")
 			    else:
-				    print(line) #mi serve per capire quale ha checkatosai qua
-			
-
+				    print(line) 
