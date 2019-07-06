@@ -1,0 +1,260 @@
+\chapter{Answer Set Programming}
+
+Il presente capitolo illustra le principali scelte implementative adottate nella formulazione di un problema di soddisfacimento vincoli utilizzando lo strumento \texttt{clingo}. Il problema scelto è la costruzione dell'orario settimanale di una scuola media.
+
+
+\section{Implementazione}
+Nell'analisi che segue, le sottosezioni iniziali sono dedicate alle fasi ``generate" e ``define", mentre la penultima sottosezione è dedicata agli integrity constraints, ovvero alla fase ``test". Conclude la trattazione una breve discussione sulle prestazioni.
+
+\subsection{Fatti iniziali}
+Il primo passo nella costruzione della soluzione è stato elencare i fatti che definiscono il ``dominio" delle variabili che compariranno nel seguito.
+\lstset{numbers=left,breaklines=true,language=Octave,basicstyle=\small\ttfamily}
+\begin{lstlisting}[frame=single]
+aula(1..11).
+docente(1..11).
+materia(let;mat;tec;mus;ing;spa;rel;art;sci;edf;inf;pit;edc;fil).
+materia_extra(inf;pit;edc;fil).
+classe(1..6).
+giorno(lun;mar;mer;gio;ven).
+ora(1..10).
+tempo_prolungato(C) :- classe(C), (C \ 2) == 1.
+\end{lstlisting}
+L'unico aspetto degno di nota riguarda la scelta del numero di docenti (linea 2). Questo è stato ricavato dal testo, in particolare considerando i seguenti requisiti:
+\begin{itemize}
+\item Ci sono due docenti per ciascuno dei seguenti insegnamenti: lettere, matematica, scienze;
+\item Vi è un unico docente per tutti gli altri insegnamenti;
+\item Ogni docente insegna una ed una sola materia, con l'eccezione di matematica e scienze, ossia un docente 
+incaricato di insegnare matematica risulterà anche insegnante di scienze (non necessariamente per la stessa classe).
+\end{itemize}
+
+È possibile dedurne che gli insegnanti in totale sono 11: ogni docente che insegna matematica figura anche tra i docenti di scienze, pertanto non deve essere contato due volte.
+
+\subsection{Associazione docente-materia}
+\label{docente_materia}
+L'associazione fra un docente e la materia insegnata può essere facilmente automatizzata sfruttando le seguenti regole:
+\lstset{language=Octave,basicstyle=\ttfamily}
+\begin{lstlisting}[frame=single]
+1 { insegna(D,M) : materia(M) } 2 :- docente(D).
+1 { insegna(D,M) : materia(M) } 1 :-
+	docente(D), not insegna(D,mat), not docente_extra(D).
+% insegna matematica sse insegna scienze	
+insegna(D,sci) :- insegna(D,mat).
+insegna(D,mat) :- insegna(D,sci).
+% docenti incaricati delle materie extra
+insegna(D,inf) :- insegna(D,tec).
+insegna(D,pit) :- insegna(D,art).
+insegna(D,edc) :- insegna(D,edf).
+insegna(D,fil) :- insegna(D,mus).
+% definizione di docente extra
+docente_extra(D) :- materia_extra(M), insegna(D,M).
+\end{lstlisting}
+
+La prima regola fissa, per ciascun docente, il numero minimo di materie insegnate a 1, ed il numero massimo a 2; la seconda regola è ulteriormente restrittiva ed impone ad un docente che non insegna matematica/scienze o una materia extra, di insegnare una ed una sola materia.
+Le successive due regole di fatto esprimono una doppia implicazione: un docente insegna matematica se e solo se insegna scienze. In questo modo, gli unici docenti che insegneranno più di una materia saranno quelli di matematica/scienze e quelli che insegnano materie extra (come specificato dalle relative regole), mentre a tutti gli altri docenti spetterà un'unica materia.
+ 
+ Le regole introdotte finora non sono tuttavia sufficienti per assicurare una corretta distribuzione degli incarichi: nulla vieta di assegnare le stesse materie a più docenti, e ciò potrebbe portare alla totale assenza di docenti per taluni insegnamenti. Occorre quindi introdurre un'ulteriore vincolo: data una materia, uno ed un solo un docente deve risultare incaricato dell'insegnamento della stessa a meno che non si tratti di letteratura, matematica o scienze; in quest'ultimo caso, è necessario che vi siano due docenti distinti.
+Quanto appena descritto si può ottenere come segue:
+\begin{lstlisting}[frame=single]
+1 { insegna(D,M) : docente(D) } 2 :- materia(M).
+1 { insegna(D,M) : docente(D) } 1 :-
+	 materia(M),
+	 M != let, M != mat, M != sci.
+\end{lstlisting}
+
+\subsection{Associazione aula-materia}
+\label{aula_materia}
+In modo del tutto analogo a quanto fatto per i docenti, è possibile associare automaticamente le aule alle materie.
+Le regole riprendono piuttosto da vicino quanto già fatto in precedenza. Occorre infatti assegnare una ed una sola aula a ciascuna materia (con l'eccezione di lettere che dispone di due aule distinte) e, simmetricamente, una ed una sola materia a ciascuna aula (escluse quelle che sono dedicate anche ad una materia extra):
+\begin{lstlisting}[frame=single]
+1 { aula_dedicata(A,M) : aula(A) } 1 :- materia(M), M != let.
+2 { aula_dedicata(A,let) : aula(A) } 2 .
+1 { aula_dedicata(A,M) : materia(M) } 2 :- aula(A).
+1 { aula_dedicata(A,M) : materia(M) } 1 :-
+	aula(A), not aula_extra(A).
+% aule dedicate alle materie extra
+aula_dedicata(A,inf) :- aula_dedicata(A,tec).
+aula_dedicata(A,pit) :- aula_dedicata(A,art).
+aula_dedicata(A,fil) :- aula_dedicata(A,mus).
+aula_dedicata(A,edc) :- aula_dedicata(A,rel).
+% definizione di aula extra
+aula_extra(A) :- materia_extra(M), aula_dedicata(A,M).
+\end{lstlisting}
+
+
+\subsection{Associazione docente-classe}
+Il passo successivo consiste nello stabilire in che modo i docenti sono incaricati di insegnare la materia di propria competenza alle varie classi. Per fare questo, è stata utilizzata una funzione \texttt{ruolo(D,M,C)} alla quale si può associare il significato ``il docente  \texttt{D} insegna la materia \texttt{M} alla classe \texttt{C}". Suddetta funzione è soggetta alle seguenti regole:
+\begin{lstlisting}[frame=single]
+1 { ruolo(D,M,C) : insegna(D,M) } 1 :-
+	materia(M), not materia_extra(M), classe(C). 
+% assegnamento dei docenti di ruolo per le materie extra
+ruolo(D,inf,C):- ruolo(D,tec,C), tempo_prolungato(C). 
+ruolo(D,pit,C):- ruolo(D,art,C), tempo_prolungato(C). 
+ruolo(D,edc,C):- ruolo(D,edf,C), tempo_prolungato(C). 
+ruolo(D,fil,C):- ruolo(D,mus,C), tempo_prolungato(C). 
+\end{lstlisting}
+La prima sfrutta il fatto che il grounding delle variabili globali ha precedenza sul grounding delle variabili locali (ovvero quelle variabili che compaiono all'interno di una condition) per fissare ad 1 il numero di docenti che dovranno insegnare una certa materia \texttt{M} ad una data classe \texttt{C}. È importante notare che all'interno dell'aggregato il docente di ruolo non viene scelto fra tutti gli insegnanti possibili, bensì solo fra quelli che risultano effettivamente abilitati all'insegnamento della materia presa in considerazione. In più, vengono assegnati i docenti di ruolo per le materie extra   alle classi che devono frequentarle.
+ 
+Anche se non è esplicitamente incluso tra i requisiti, è stata introdotta una seconda regola di ``buon senso" che riguarda \texttt{ruolo}, in modo da assicurare che i docenti di letteratura, matematica e scienze si distribuiscano equamente il carico didattico. Viene infatti imposto che ogni docente \texttt{D} insegni una materia \texttt{M} (per la quale è abilitato) ad almeno 3 classi distinte. In questo modo non può mai verificarsi, ad esempio, che uno dei due docenti di matematica e scienze sia responsabile di un numero maggiore di classi rispetto al collega.
+\begin{lstlisting}[frame=single]
+3 { ruolo(D,M,C) : classe(C) } :- docente(D), insegna(D,M).
+\end{lstlisting}
+
+\subsection{Monte ore}
+Ogni classe deve frequentare un certo numero di ore settimanali per ciascuna materia; questo vincolo può essere espresso in termini di opportuni aggregati. A titolo di esempio, se ne riportano alcuni: 
+\begin{lstlisting}[frame=single]
+10 { ora_dedicata(let,C,G,O) : giorno(G) , ora(O) } 10 :-
+	classe(C).
+4 { ora_dedicata(mat,C,G,O) : giorno(G) , ora(O) } 4 :- 
+	classe(C).
+    ...
+4 { ora_dedicata(inf,C,G,O) : giorno(G) , ora(O) } 4 :- 
+	classe(C), tempo_prolungato(C).
+2 { ora_dedicata(pit,C,G,O) : giorno(G) , ora(O) } 2 :- 
+	classe(C), tempo_prolungato(C).
+\end{lstlisting}
+In generale la funzione presenta la forma \texttt{ora\_dedicata(M,C,G,O)}, e sta ad indicare che ``la classe \texttt{C} dedica l'ora \texttt{O} del giorno \texttt{G} alla materia \texttt{M}". L'utilizzo dell'aggregato fa sì che il numero settimanale di ore dedicate ad una specifica materia rispetti il relativo monte ore.
+
+\subsection{Lezioni}
+Prima di procedere alla generazione al calendario delle lezioni vero e proprio, è necessario introdurre ancora due regole che permettano di esprimere quando un'aula risulta occupata e, in modo simile, quando un docente risulta impegnato.
+
+La prima delle due regole è stata formulata come segue:
+\begin{lstlisting}[frame=single]
+1 { aula_occupata(A,C,G,O) : aula_dedicata(A,M) } 1 :-
+	 ora_dedicata(M,C,G,O).
+\end{lstlisting}
+e stabilisce che, quando una classe \texttt{C} dedica un'ora ad una specifica materia \texttt{M}, una delle aule dedicate a tale materia deve risultare occupata. L'uso dell'aggregato è reso necessario dall'esistenza di una materia (letteratura) che dispone di più aule ad essa dedicate: solo una di suddette aule deve risultare occupata dalla classe in questione.
+
+La seconda regola afferma che quando una classe  \texttt{C} dedica un'ora della giornata ad una materia \texttt{M}, il docente  di ``\texttt{ruolo}" deve risultare impegnato nell'insegnamento di tale materia:
+\begin{lstlisting}[frame=single]
+docente_impegnato(D,M,C,G,O) :-
+	 ora_dedicata(M,C,G,O), ruolo(D,M,C).
+\end{lstlisting}
+
+Infine, la costruzione della lezione avviene nel seguente modo: 
+
+\begin{lstlisting}[frame=single]
+lezione(A,D,M,C,G,O) :-
+	docente_impegnato(D,M,C,G,O), aula_occupata(A,C,G,O). 	
+\end{lstlisting}
+Si mettono cioè assieme le informazioni relative all'aula occupata ed al docente impegnato durante una certa ora di uno specifico giorno.
+
+\subsection{Integrity constraints}
+A questo punto, è necessario utilizzare degli integrity constraints per scartare tutte le soluzioni che non sono ammissibili. I vincoli che occorre imporre sono:
+
+\begin{itemize}[leftmargin=0pt]
+\item Una classe non può dedicare la stessa ora a due materie diverse, ovvero non può seguire due lezioni distinte contemporaneamente:
+\begin{lstlisting}[frame=single]
+:-ora_dedicata(M1,C,G,O), ora_dedicata(M2,C,G,O), M1 != M2.
+\end{lstlisting}
+\item Un'aula non può ospitare due classi distinte contemporaneamente:
+\begin{lstlisting}[frame=single]
+:-aula_occupata(A,C1,G,O), aula_occupata(A,C2,G,O), C1 != C2.
+\end{lstlisting}
+\item Una classe non può occupare due aule distinte contemporaneamente:
+\begin{lstlisting}[frame=single]
+:-aula_occupata(A1,C,G,O), aula_occupata(A2,C,G,O), A1 != A2.
+\end{lstlisting}
+\item Un docente non può insegnare a due classi distinte contemporaneamente:
+\begin{lstlisting}[frame=single]
+:-docente_impegnato(D,_,C1,G,O),
+ docente_impegnato(D,_,C2,G,O),
+ C1 != C2. 
+\end{lstlisting}
+\end{itemize}
+
+
+\subsection{Requisiti e vincoli addizionali}
+Oltre a quelli già discussi, sono stati aggiunti ulteriori vincoli nel tentativo di ottenere un orario quanto più possibile bilanciato e verosimile.
+
+\begin{itemize}[leftmargin=0pt]
+
+\item Il primo di questi vincoli addizionali impone che, se una certa ora è fra le prime sei, deve esservi lezione qualsiasi sia il giorno e la classe considerata (ovvero le lezioni del mattino si svolgono allo stesso modo per tutte le sezioni):
+\begin{lstlisting}[frame=single]
+:- ora(O), giorno(G), classe(C),
+not ora_dedicata(_,C,G,O), O <= 6.
+\end{lstlisting} 
+
+\item Si impone alle classi che non sono a tempo prolungato di frequentare solo le prime sei ore di ciascuna giornata:
+\begin{lstlisting}[frame=single]
+:- ora_dedicata(_,C,_,O), O > 6, not tempo_prolungato(C).
+\end{lstlisting} 
+
+\item Si impedisce che nell'orario di una qualsiasi classe vi siano interruzioni:
+\begin{lstlisting}[frame=single]
+:- ora(O1), not ora_dedicata(_,C,G,O1),
+ora_dedicata(_,C,G,O2), O1 < O2.
+\end{lstlisting} 
+
+\item Viene limitato a due il numero massimo di ore dedicate ad una specifica materia nel corso di una giornata:
+\begin{lstlisting}[frame=single]
+{ ora_dedicata(M,C,G,O) : ora(O) } 2 :- 
+	classe(C), materia(M), giorno(G).
+\end{lstlisting}
+
+\item È parso sensato prediligere lezioni della durata di due ore consecutive, ove possibile. 
+\begin{comment}
+Sono state quindi realizzate due versioni alternative del presente vincolo: \\ \\
+\textbf{Versione A} \\
+La prima versione impone che durante le prime quattro ore di una giornata ogni classe segua due materie distinte, a cui spettano due ore consecutive ciascuna. Le ultime due ore sono invece lasciate libere da vincoli, così da permettere la gestione di quelle materie che hanno un numero dispari di ore settimanali (inglese e religione). Per ottenere quanto detto, si è introdotto un fatto aggiuntivo relativo al numero totale di ore in una giornata (linea 1). Si fa quindi uso dell'operatore modulo per far sì che la materia insegnata durante ogni ora dispari sia uguale a quella dell'ora successiva, ma solo se non si tratta della penultima ora: in questo modo le ultime due ore non vengono vincolate, come desiderato.
+\begin{lstlisting}[frame=single]
+ore_al_giorno(6).
+:- ora_dedicata(M1,C,G,O), ora_dedicata(M2,C,G,O+1),
+ (O \ 2) == 1, not ore_al_giorno(O+1), M1 != M2.
+\end{lstlisting} 
+\textbf{Versione B} \\
+\end{comment}
+Si ricorre quindi all'operatore modulo per far sì che la materia insegnata durante ogni ora dispari sia uguale a quella dell'ora successiva; il vincolo viene rilassato solo nel caso in cui, considerata una coppia di ore consecutive, la prima ora risulti dedicata a religione. Poiché vi è solo un'altra materia con un numero dispari di ore totali (ovvero inglese) questo vincolo fa sì che nell'orario finale vi sia sempre un'unica coppia di due ore consecutive in cui la prima è dedicata a religione e la seconda a inglese (tale ordine può essere facilmente invertito). In tutti gli altri casi due ore consecutive sono dedicate alla stessa materia.
+\begin{lstlisting}[frame=single]
+ora_dedicata(M,C,G,O+1) :-
+	ora_dedicata(M,C,G,O), (O \ 2) == 1, M != rel. 
+\end{lstlisting}
+
+\item Infine, in presenza delle regole sopra elencate, si può considerare l'aggiunta di un ultimo vincolo che impedisca ad una classe di cambiare aula a cavallo di una lezione. Di fatto questa restrizione si applica alle sole lezioni di letteratura, in quanto unica materia a disporre di due aule distinte.
+\begin{lstlisting}[frame=single]
+:- lezione(A1,D,M,C,G,O), lezione(A2,D,M,C,G,O+1),
+ (O \ 2) == 1, A1 != A2. 
+\end{lstlisting}
+L'utilizzo dell'operatore modulo non è indispensabile in questo caso, ma si è osservato che mantenerlo velocizza leggermente la ricerca di una soluzione. Si veda la sottosezione seguente per i dettagli.
+\end{itemize}
+
+\subsection{Prestazioni ed osservazioni finali}
+
+Come accennato alla fine della sottosezione precedente, nel corso dei test effettuati sono emersi alcuni fattori in grado di influenzare positivamente le prestazioni dello strumento nella ricerca di una soluzione ammissibile.
+Tutte le misurazioni sono state effettuate su una macchina dotata di processore Intel Core i5-421OU (3MB di cache e frequenza fino a 2.7 GHz).
+
+Il primo fattore è legato all'utilizzo dell'operatore modulo nell'ultima regola considerata, quella che impedisce cambi di aula nel mezzo di una stessa lezione di due ore consecutive. Guidare il risolutore limitando il controllo alle sole ore dispari velocizza le operazioni, come si evince dai tempi riportati in tabella \ref{time1_table}.
+
+\begin{table}[h]
+\begin{center}
+\begin{tabular}{ |c|c| } 
+ \hline
+ senza operatore modulo & 18.467  \\ 
+ \hline
+ con operatore modulo & 13.112  \\ 
+ \hline
+\end{tabular}
+\caption{Tempo impiegato in media per trovare il primo modello (espresso in secondi)}
+ \label{time1_table}
+\end{center}
+ \end{table}
+ 
+Un altro notevole incremento di prestazioni si ha nel momento in cui invece di lasciare al risolutore il compito di trovare le associazioni docente-materia e aula-materia (servendosi delle regole descritte nelle sottosezioni \ref{docente_materia} e \ref{aula_materia}), si procede a codificare direttamente tali associazioni. Stabilire le associazioni docente-materia e aula-materia risulta pressoché istantaneo quando il risolutore considera unicamente le relative regole. Quando al contrario tali regole sono inserite in un contesto più ampio il risolutore ha evidentemente più scelta per fare ``backtracking" nel momento in cui un certo assegnamento porta ad un conflitto:  l'ipotesi è che, occasionalmente, vengano riconsiderati anche assegnamenti che in realtà non dovrebbero influenzare l'esistenza di una soluzione, come quelli relativi alle associazioni di cui sopra.
+\begin{table}[h]
+\begin{center}
+\begin{tabular}{ |c|c| } 
+ \hline
+ associazioni automatiche & 13.112  \\ 
+ \hline
+ associazioni hard-coded & 1.684  \\ 
+ \hline
+\end{tabular}
+\caption{Tempo impiegato in media per trovare il primo modello (espresso in secondi)}
+\end{center}
+ \end{table}
+
+In conclusione sembra che ``guidare" la soluzione, in tutti i casi in cui ciò risulta possibile senza causare una perdita di generalità della stessa, comporti vantaggi non indifferenti in termini di tempo speso nella computazione.
+
+Un'ultima considerazione riguarda il numero di modelli trovati da \texttt{clingo}. Concedendo al risolutore una decina di minuti per generare quante più soluzioni possibili, sono stati prodotti oltre un milione di modelli. L'elevato numero di modelli in un certo senso non sorprende: si dispone infatti di aule e di docenti in numero sufficiente da permettere una certa flessibilità nella costruzione dell'orario.
+
+\section{Validazione dei risultati}
+L'elevato numero di modelli generati e la complessità degli stessi ha reso impossibile una validazione manuale. È stato quindi implementato uno script in python (\texttt{checker.py}) in grado di verificare automaticamente suddetti modelli. In questo modo, è stato possibile validarne più di 30000, garantendo una certa solidità della soluzione proposta. 

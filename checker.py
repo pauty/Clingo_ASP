@@ -43,6 +43,7 @@ class monte_ore(object):
 		print("edc: ", self.edc)
 
 	def count(self,mat):
+		#print("BBBBBBB")
 		if (self.classe % 2 == 0):
 			if (mat == "inf" or mat == "pit" or mat == "fil" or mat == "edc"):
 				print("Error with class", self.classe, " and lesson of ", mat)
@@ -76,9 +77,21 @@ class monte_ore(object):
 			self.edc -= 1
 
 	def check_monte_ore(self):
-		counter = self.let + self.mat + self.sci + self.ing + self.spa + self.mus + self.tec + self.art + self.edf + self.rel + self.inf + self.pit + self.fil + self.edc
-		if (counter != 0):
-			print("Error with monte ore of calss: ", self.classe)
+		if (self.let != 0 or
+			self.mat != 0 or
+			self.sci != 0 or
+			self.ing != 0 or
+			self.spa != 0 or
+			self.mus != 0 or
+			self.tec != 0 or
+			self.art != 0 or
+			self.edf != 0 or
+			self.rel != 0 or
+			self.inf != 0 or
+			self.pit != 0 or
+			self.fil != 0 or
+			self.edc != 0):
+			print("Error with monte ore of class: ", self.classe)
 			self.print_class()
 			return False
 		else:
@@ -159,15 +172,17 @@ def check_model(solution):
 	is_good = True
 	for token in tokens:
 		if 'ruolo' in token:
+			#caso predicato ruolo
 			token = token[token.index("(")+1:token.index(")")]
 			token = token.split(",")
-			if ( int(token[2])%2 == 0):
+			if (int(token[2])%2 == 0):
 				if (token[1] == "inf" or token[1] == "pit" or token[1] == "edc" or token[1] == "fil"):
-					print("Problem with: ", token)
-					print("Class ", token[2], "can't have a ", token[1], " lesson.")
-					return False 
+					print("Class ", token[2], "should not have a ", token[1], " teacher.")
+					print("Warning with: ", token)
+					#return False 
 			ruolo.add((token[0],token[1],token[2]))#uso le tuple perché non posso inserire le liste
 		else:
+			#caso predicato lezione
 			token = token[token.index("(")+1:token.index(")")]
 			token = token.split(",")
 
@@ -189,8 +204,8 @@ def check_model(solution):
 				print("Error check_ruolo for teacher: ", token[1], ", course: ", token[2], " and class ", token[3])
 				print("Problem with: ", token)
 				return False
-			if ( int(token[3])%2 == 0):
-				if (int(token[5])>6):
+			if (int(token[3])%2 == 0):
+				if (int(token[5]) > 6):
 					print("Error class: ", token[3], " can't have ", token[5], " hours.")
 					print("Problem with: ", token)
 					return False
@@ -241,8 +256,8 @@ def check_model(solution):
 		return False
 	
 	if not (len(ruolo) == 72):
-		print("Cardinality of set 'ruolo' is ", len(ruolo) ," and not 72")
-		return False
+		print("Warning: cardinality of set 'ruolo' is ", len(ruolo) ," and not 72")
+		#return False
 	if not (count_lessons == 210):
 		print("The nember of lessons is ", count_lessons ," and not 210")
 		return False
